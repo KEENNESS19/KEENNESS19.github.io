@@ -1,0 +1,76 @@
+<h1 id="javascript-闭包详解" tabindex="-1">JavaScript 闭包详解 <a class="header-anchor" href="#javascript-闭包详解" aria-label="Permalink to “JavaScript 闭包详解”">&#8203;</a></h1>
+<h2 id="什么是闭包" tabindex="-1">什么是闭包？ <a class="header-anchor" href="#什么是闭包" aria-label="Permalink to “什么是闭包？”">&#8203;</a></h2>
+<p>闭包（Closure）是 JavaScript 中最强大的特性之一。简单来说，<strong>闭包是指有权访问另一个函数作用域中变量的函数</strong>。</p>
+<div class="language-javascript"><button title="Copy Code" class="copy"></button><span class="lang">javascript</span><pre><!--::markdown-it-async::sbzsdhdkr0psmq2inub0un::--><code>function outerFunction() {
+  const outerVariable = &#039;我是外部变量&#039;
+
+  function innerFunction() {
+    console.log(outerVariable) // 可以访问外部变量
+  }
+
+  return innerFunction
+}
+
+const closure = outerFunction()
+closure() // 输出: 我是外部变量</code></pre>
+</div><h2 id="闭包的形成条件" tabindex="-1">闭包的形成条件 <a class="header-anchor" href="#闭包的形成条件" aria-label="Permalink to “闭包的形成条件”">&#8203;</a></h2>
+<ol>
+<li>函数嵌套函数</li>
+<li>内部函数引用了外部函数的变量</li>
+<li>内部函数被返回或在外部被调用</li>
+</ol>
+<h2 id="应用场景" tabindex="-1">应用场景 <a class="header-anchor" href="#应用场景" aria-label="Permalink to “应用场景”">&#8203;</a></h2>
+<h3 id="_1-数据私有化" tabindex="-1">1. 数据私有化 <a class="header-anchor" href="#_1-数据私有化" aria-label="Permalink to “1. 数据私有化”">&#8203;</a></h3>
+<div class="language-javascript"><button title="Copy Code" class="copy"></button><span class="lang">javascript</span><pre><!--::markdown-it-async::054t3uk8mupasr2flcnpjl::--><code>function createCounter() {
+  let count = 0
+
+  return {
+    increment() {
+      count++
+      return count
+    },
+    decrement() {
+      count--
+      return count
+    },
+    getCount() {
+      return count
+    },
+  }
+}
+
+const counter = createCounter()
+console.log(counter.increment()) // 1
+console.log(counter.increment()) // 2
+console.log(counter.count) // undefined（私有变量无法直接访问）</code></pre>
+</div><h3 id="_2-函数柯里化" tabindex="-1">2. 函数柯里化 <a class="header-anchor" href="#_2-函数柯里化" aria-label="Permalink to “2. 函数柯里化”">&#8203;</a></h3>
+<div class="language-javascript"><button title="Copy Code" class="copy"></button><span class="lang">javascript</span><pre><!--::markdown-it-async::yw719alhlrsc5gbwy1otf::--><code>function curry(fn) {
+  return function curried(...args) {
+    if (args.length &gt;= fn.length) {
+      return fn.apply(this, args)
+    }
+    return function (...nextArgs) {
+      return curried.apply(this, [...args, ...nextArgs])
+    }
+  }
+}
+
+const sum = curry((a, b, c) =&gt; a + b + c)
+console.log(sum(1)(2)(3)) // 6</code></pre>
+</div><h3 id="_3-防抖与节流" tabindex="-1">3. 防抖与节流 <a class="header-anchor" href="#_3-防抖与节流" aria-label="Permalink to “3. 防抖与节流”">&#8203;</a></h3>
+<div class="language-javascript"><button title="Copy Code" class="copy"></button><span class="lang">javascript</span><pre><!--::markdown-it-async::axiteg6645bz5zy4emn8zf::--><code>function debounce(fn, delay) {
+  let timer = null
+  return function (...args) {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() =&gt; fn.apply(this, args), delay)
+  }
+}</code></pre>
+</div><h2 id="交互演示-三个计数器-三份封闭的状态" tabindex="-1">交互演示：三个计数器，三份封闭的状态 <a class="header-anchor" href="#交互演示-三个计数器-三份封闭的状态" aria-label="Permalink to “交互演示：三个计数器，三份封闭的状态”">&#8203;</a></h2>
+<p>下面的插件就是用 React 写的（博客内置的 React 知识插件系统）。点击按钮亲手验证：同一段工厂代码，每个实例捕获独立的 <code>count</code>；「重造实例」重新调用工厂，得到全新作用域。</p>
+<ReactHost name="ClosureDemo" /><h2 id="注意事项" tabindex="-1">注意事项 <a class="header-anchor" href="#注意事项" aria-label="Permalink to “注意事项”">&#8203;</a></h2>
+<div  class="warning custom-block"><p class="custom-block-title">内存泄漏</p>
+<p>闭包会保留外部函数的作用域，如果使用不当会导致内存泄漏。记得在不需要时解除引用。</p>
+</div>
+<div  class="tip custom-block"><p class="custom-block-title">循环中的闭包</p>
+<p>在循环中创建闭包时要特别注意变量共享问题，推荐使用 <code>let</code> 或立即执行函数（IIFE）。</p>
+</div>

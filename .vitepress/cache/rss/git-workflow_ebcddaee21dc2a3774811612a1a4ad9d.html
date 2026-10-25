@@ -1,0 +1,129 @@
+<h1 id="git-工作流与高级技巧" tabindex="-1">Git 工作流与高级技巧 <a class="header-anchor" href="#git-工作流与高级技巧" aria-label="Permalink to “Git 工作流与高级技巧”">&#8203;</a></h1>
+<h2 id="常见-git-工作流" tabindex="-1">常见 Git 工作流 <a class="header-anchor" href="#常见-git-工作流" aria-label="Permalink to “常见 Git 工作流”">&#8203;</a></h2>
+<h3 id="git-flow" tabindex="-1">Git Flow <a class="header-anchor" href="#git-flow" aria-label="Permalink to “Git Flow”">&#8203;</a></h3>
+<p>适合有明确版本发布周期的项目：</p>
+<div class="language-"><button title="Copy Code" class="copy"></button><span class="lang"></span><pre><!--::markdown-it-async::j0l2t8dohzkbr7ewmivdxu::--><code>main ───────────────────────────── 生产环境
+  │
+  └── develop ─────────────────── 开发环境
+         │
+         ├── feature/xxx ─────── 新功能分支
+         ├── release/v1.0 ────── 发布准备
+         └── hotfix/xxx ──────── 紧急修复</code></pre>
+</div><h3 id="github-flow" tabindex="-1">GitHub Flow <a class="header-anchor" href="#github-flow" aria-label="Permalink to “GitHub Flow”">&#8203;</a></h3>
+<p>简单高效，适合持续部署：</p>
+<div class="language-"><button title="Copy Code" class="copy"></button><span class="lang"></span><pre><!--::markdown-it-async::3qm14kxa2pgriwtr31carb::--><code>main ───────────────────────────── 始终可部署
+  │
+  └── feature/xxx ─────────────── 功能分支
+         │
+         └── Pull Request ────── Code Review + 合并</code></pre>
+</div><h2 id="变基-rebase-高级用法" tabindex="-1">变基（rebase）高级用法 <a class="header-anchor" href="#变基-rebase-高级用法" aria-label="Permalink to “变基（rebase）高级用法”">&#8203;</a></h2>
+<h3 id="合并多个提交" tabindex="-1">合并多个提交 <a class="header-anchor" href="#合并多个提交" aria-label="Permalink to “合并多个提交”">&#8203;</a></h3>
+<div class="language-bash"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre><!--::markdown-it-async::bmlwefdmr2gkoajzmydz::--><code># 合并最近 3 个提交
+git rebase -i HEAD~3</code></pre>
+</div><p>在编辑器中修改：</p>
+<div class="language-bash"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre><!--::markdown-it-async::edfgzqqnto4oubnl3f2n47::--><code>pick abc123  feat: 添加用户登录
+squash def456 fix: 修复登录逻辑
+squash ghi789 style: 调整登录页面样式</code></pre>
+</div><h3 id="将-feature-分支变基到-develop" tabindex="-1">将 feature 分支变基到 develop <a class="header-anchor" href="#将-feature-分支变基到-develop" aria-label="Permalink to “将 feature 分支变基到 develop”">&#8203;</a></h3>
+<div class="language-bash"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre><!--::markdown-it-async::f6fjol4cqw89mq8d7c0nl::--><code>git checkout feature/xxx
+git rebase develop
+
+# 如果有冲突，解决后执行
+git add .
+git rebase --continue
+
+# 或取消变基
+git rebase --abort</code></pre>
+</div><h2 id="储藏-stash-技巧" tabindex="-1">储藏（stash）技巧 <a class="header-anchor" href="#储藏-stash-技巧" aria-label="Permalink to “储藏（stash）技巧”">&#8203;</a></h2>
+<div class="language-bash"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre><!--::markdown-it-async::azvha9mxlxebkcmoaz5uk::--><code># 保存当前修改（包含未追踪文件）
+git stash push -u -m &quot;临时保存功能A&quot;
+
+# 查看储藏列表
+git stash list
+
+# 应用并删除储藏
+git stash pop stash@{0}
+
+# 应用但不删除
+git stash apply stash@{0}
+
+# 删除指定储藏
+git stash drop stash@{0}</code></pre>
+</div><h2 id="后悔药-撤销操作" tabindex="-1">后悔药：撤销操作 <a class="header-anchor" href="#后悔药-撤销操作" aria-label="Permalink to “后悔药：撤销操作”">&#8203;</a></h2>
+<h3 id="修改最后一次提交" tabindex="-1">修改最后一次提交 <a class="header-anchor" href="#修改最后一次提交" aria-label="Permalink to “修改最后一次提交”">&#8203;</a></h3>
+<div class="language-bash"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre><!--::markdown-it-async::48ke93q9e9hnh7d8d2fun::--><code># 修改提交信息或补充文件
+git add forgotten_file
+git commit --amend</code></pre>
+</div><h3 id="撤销工作区修改" tabindex="-1">撤销工作区修改 <a class="header-anchor" href="#撤销工作区修改" aria-label="Permalink to “撤销工作区修改”">&#8203;</a></h3>
+<div class="language-bash"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre><!--::markdown-it-async::aque1vtbrgtvf6t4swze2s::--><code># 撤销单个文件
+git checkout -- filename.txt
+
+# 撤销所有修改
+git checkout .</code></pre>
+</div><h3 id="撤销暂存区" tabindex="-1">撤销暂存区 <a class="header-anchor" href="#撤销暂存区" aria-label="Permalink to “撤销暂存区”">&#8203;</a></h3>
+<div class="language-bash"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre><!--::markdown-it-async::xlx8oeam0qrw5czims4ma::--><code>git reset HEAD filename.txt</code></pre>
+</div><h3 id="回退版本" tabindex="-1">回退版本 <a class="header-anchor" href="#回退版本" aria-label="Permalink to “回退版本”">&#8203;</a></h3>
+<div class="language-bash"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre><!--::markdown-it-async::v6mu6f2ns1lftgahu3nbn::--><code># 软回退：保留修改在暂存区
+git reset --soft HEAD~1
+
+# 混合回退（默认）：保留修改在工作区
+git reset --mixed HEAD~1
+
+# 硬回退：彻底丢弃修改
+git reset --hard HEAD~1</code></pre>
+</div><h2 id="常用-alias-配置" tabindex="-1">常用 Alias 配置 <a class="header-anchor" href="#常用-alias-配置" aria-label="Permalink to “常用 Alias 配置”">&#8203;</a></h2>
+<div class="language-bash"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre><!--::markdown-it-async::sk3eb0sezla3h4x3i7dj::--><code># 编辑 git config
+git config --global -e</code></pre>
+</div><p>添加以下别名：</p>
+<div class="language-ini"><button title="Copy Code" class="copy"></button><span class="lang">ini</span><pre><!--::markdown-it-async::s352veuar89unfoe57ocxm::--><code>[alias]
+    st = status -sb
+    lg = log --graph --pretty=format:&#039;%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)&lt;%an&gt;%Creset&#039; --abbrev-commit --date=relative
+    co = checkout
+    br = branch
+    cm = commit -m
+    df = diff
+    last = log -1 HEAD
+    unstage = reset HEAD --
+    undo = reset --soft HEAD~1</code></pre>
+</div><h2 id="清理历史大文件" tabindex="-1">清理历史大文件 <a class="header-anchor" href="#清理历史大文件" aria-label="Permalink to “清理历史大文件”">&#8203;</a></h2>
+<p>使用 <code>git-filter-repo</code>（推荐替代 <code>git filter-branch</code>）：</p>
+<div class="language-bash"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre><!--::markdown-it-async::eh2mrf1urk6ddwtss1f0mg::--><code># 安装
+pip install git-filter-repo
+
+# 分析大文件
+git filter-repo --analyze
+cat .git/filter-repo/analysis/path-all-sizes.txt
+
+# 删除指定文件并清理历史
+git filter-repo --invert-paths --path path/to/large/file</code></pre>
+</div><h2 id="常用速查表" tabindex="-1">常用速查表 <a class="header-anchor" href="#常用速查表" aria-label="Permalink to “常用速查表”">&#8203;</a></h2>
+<table tabindex="0">
+<thead>
+<tr>
+<th>场景</th>
+<th>命令</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>查看修改内容</td>
+<td><code>git diff</code> / <code>git diff --cached</code></td>
+</tr>
+<tr>
+<td>查看谁写的</td>
+<td><code>git blame filename</code></td>
+</tr>
+<tr>
+<td>搜索提交历史</td>
+<td><code>git log -S &quot;关键词&quot;</code></td>
+</tr>
+<tr>
+<td>临时切换分支</td>
+<td><code>git stash</code> → 切换 → <code>git stash pop</code></td>
+</tr>
+<tr>
+<td>只取某个提交</td>
+<td><code>git cherry-pick &lt;commit-hash&gt;</code></td>
+</tr>
+</tbody>
+</table>

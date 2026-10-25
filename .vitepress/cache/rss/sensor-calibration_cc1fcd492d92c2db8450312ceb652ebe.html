@@ -1,0 +1,24 @@
+<h1 id="传感器标定" tabindex="-1">传感器标定 <a class="header-anchor" href="#传感器标定" aria-label="Permalink to “传感器标定”">&#8203;</a></h1>
+<p><strong>一句话定义：标定 = 估计传感器的固有参数（内参）与安装位姿（外参），使多源数据在统一坐标系下自洽。</strong></p>
+<h2 id="内核-为什么标定是绕不开的" tabindex="-1">内核：为什么标定是绕不开的 <a class="header-anchor" href="#内核-为什么标定是绕不开的" aria-label="Permalink to “内核：为什么标定是绕不开的”">&#8203;</a></h2>
+<p>每个传感器出厂自带<strong>自己的坐标系</strong>：相机系原点在光心，IMU 系在芯片的某只引脚旁，激光系在转镜中心。它们被拧到机器人上时，又叠加一个<strong>随手的安装位姿</strong>。而所有上层算法（融合、避障、抓取）都默认&quot;数据在世界系/机体系下对齐&quot;——</p>
+<p><strong>不对齐的根源有两类，标定就分两半</strong>：</p>
+<ul>
+<li><strong>内参</strong>（器件固有、与安装无关）：相机焦距/畸变、IMU 的刻度因子/零偏/轴间非正交、编码器的零位偏移。它们是器件&quot;自己的性格&quot;，由出厂工艺误差决定。</li>
+<li><strong>外参</strong>（安装位姿）：传感器系到机器人系的旋转平移 $T$（<a href="/notes/机器人/数学基础/transform-homogeneous" class="term-link" title="位姿=坐标系间关系；齐次矩阵统一旋转与平移，左右乘各有确定含义">坐标变换与齐次矩阵</a>的 $T_{AB}$ 就是它的容器）。</li>
+</ul>
+<p><strong>标定的统一形式是一个优化问题</strong>：给参数赋初值 → 构造残差（&quot;如果参数是对的，这些观测量本应相等&quot;）→ 最小二乘迭代（Gauss-Newton / Levenberg-Marquardt）。不同标定算法只是换了残差定义。</p>
+<h2 id="规则与行为" tabindex="-1">规则与行为 <a class="header-anchor" href="#规则与行为" aria-label="Permalink to “规则与行为”">&#8203;</a></h2>
+<p><strong>手眼标定（最经典的外参标定，展开说）</strong>：相机装在机械臂上，要估相机-末端变换 $X$。机械臂动两次，世界系下有恒等式：</p>
+<p>$$A X = X B$$</p>
+<p>其中 A 是两次末端位姿之差（机械臂自己知道），B 是两次相机观测之差（标定板给出）。几何意义：<strong>末端与相机一起动，它们的相对位姿 $X$ 不变</strong>——用&quot;变化的组合&quot;把&quot;不变的量&quot;解出来。AX=XB 的求解要求旋转轴方向多样，由此得到第一条实践纪律：</p>
+<p><strong>激励充分性规则</strong>：标定数据必须覆盖足够多样的姿态/视角（旋转轴不能共线）。数据平庸，解就平庸——90% 的标定失败是数据问题而不是算法问题。</p>
+<p><strong>规则清单</strong>：</p>
+<ol>
+<li><strong>先内参后外参</strong>：内参错则外参必然跟着错（残差被外参吸收）。</li>
+<li><strong>标定要闭环验证</strong>：标完用未参与标定的数据检查残差/重投影误差；机械臂场景用&quot;指到点上&quot;的末端重复性验证。</li>
+<li><strong>温漂与振动会破坏标定</strong>：外参是&quot;当天有效&quot;的量，碰撞后重标。长期运行的大系统把标定做成例行流程（见<a href="/notes/机器人/系统与仿真/integration" class="term-link" title="把模块间隐式假设（时钟/坐标系/单位/方向/时序）显式化验证">整机联调流程</a>）。</li>
+<li><strong>零位偏移是外参的特殊情形</strong>：关节编码器零位偏移标定 = 把&quot;关节读数&quot;与&quot;外部真值&quot;（限位/标定块/目视）对齐——舵机测试里&quot;零位不对&quot;本质是这一条。</li>
+</ol>
+<h2 id="抽象-tf-树是外参的容器-标定是它的填充器" tabindex="-1">抽象：TF 树是外参的容器，标定是它的填充器 <a class="header-anchor" href="#抽象-tf-树是外参的容器-标定是它的填充器" aria-label="Permalink to “抽象：TF 树是外参的容器，标定是它的填充器”">&#8203;</a></h2>
+<p>外参的抽象归宿是 TF 树：每个传感器在树上有唯一位置，标定算法产出的 $T$ 写入树中（见<a href="/notes/机器人/软件与中间件/ros2" class="term-link" title="坐标系组织成树，任意两系间变换自动链式求解并带时间戳">TF 树</a>）。于是&quot;标定&quot;在架构里变成一个<strong>纯数据生产者</strong>——产出带不确定度的时间戳化外参。这个抽象让标定从&quot;一次性仪式&quot;变成&quot;可维护的数据&quot;：谁变了（换相机、碰撞）就重产谁，上层算法无感知。</p>

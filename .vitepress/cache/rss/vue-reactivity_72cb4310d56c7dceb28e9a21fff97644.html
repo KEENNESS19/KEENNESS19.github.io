@@ -1,0 +1,107 @@
+<h1 id="vue-3-响应式原理" tabindex="-1">Vue 3 响应式原理 <a class="header-anchor" href="#vue-3-响应式原理" aria-label="Permalink to “Vue 3 响应式原理”">&#8203;</a></h1>
+<h2 id="从-object-defineproperty-到-proxy" tabindex="-1">从 Object.defineProperty 到 Proxy <a class="header-anchor" href="#从-object-defineproperty-到-proxy" aria-label="Permalink to “从 Object.defineProperty 到 Proxy”">&#8203;</a></h2>
+<p>Vue 2 使用 <code>Object.defineProperty</code> 实现响应式，而 Vue 3 改用了 <code>Proxy</code>，解决了以下问题：</p>
+<ul>
+<li>无法监听对象属性的新增和删除</li>
+<li>无法监听数组下标变化</li>
+<li>性能提升：无需递归遍历所有属性</li>
+</ul>
+<h2 id="核心实现" tabindex="-1">核心实现 <a class="header-anchor" href="#核心实现" aria-label="Permalink to “核心实现”">&#8203;</a></h2>
+<h3 id="_1-reactive-基础版本" tabindex="-1">1. reactive 基础版本 <a class="header-anchor" href="#_1-reactive-基础版本" aria-label="Permalink to “1. reactive 基础版本”">&#8203;</a></h3>
+<div class="language-typescript"><button title="Copy Code" class="copy"></button><span class="lang">typescript</span><pre><!--::markdown-it-async::uinroff2f8j3yt985irqtm::--><code>function reactive(target) {
+  return new Proxy(target, {
+    get(target, key, receiver) {
+      track(target, key) // 收集依赖
+      const res = Reflect.get(target, key, receiver)
+      if (isObject(res)) {
+        return reactive(res) // 深度代理
+      }
+      return res
+    },
+    set(target, key, value, receiver) {
+      const oldValue = target[key]
+      const res = Reflect.set(target, key, value, receiver)
+      if (oldValue !== value) {
+        trigger(target, key) // 触发更新
+      }
+      return res
+    },
+    deleteProperty(target, key) {
+      const hadKey = hasOwn(target, key)
+      const res = Reflect.deleteProperty(target, key)
+      if (hadKey &amp;&amp; res) {
+        trigger(target, key)
+      }
+      return res
+    },
+  })
+}</code></pre>
+</div><h3 id="_2-依赖收集-track" tabindex="-1">2. 依赖收集（track） <a class="header-anchor" href="#_2-依赖收集-track" aria-label="Permalink to “2. 依赖收集（track）”">&#8203;</a></h3>
+<div class="language-typescript"><button title="Copy Code" class="copy"></button><span class="lang">typescript</span><pre><!--::markdown-it-async::k3z4wwvnnhh6bgyun5ftvk::--><code>const targetMap = new WeakMap() // 存储所有对象的依赖
+
+function track(target, key) {
+  if (!activeEffect) return
+
+  let depsMap = targetMap.get(target)
+  if (!depsMap) {
+    targetMap.set(target, (depsMap = new Map()))
+  }
+
+  let dep = depsMap.get(key)
+  if (!dep) {
+    depsMap.set(key, (dep = new Set()))
+  }
+
+  if (!dep.has(activeEffect)) {
+    dep.add(activeEffect)
+    activeEffect.deps.push(dep)
+  }
+}</code></pre>
+</div><h3 id="_3-触发更新-trigger" tabindex="-1">3. 触发更新（trigger） <a class="header-anchor" href="#_3-触发更新-trigger" aria-label="Permalink to “3. 触发更新（trigger）”">&#8203;</a></h3>
+<div class="language-typescript"><button title="Copy Code" class="copy"></button><span class="lang">typescript</span><pre><!--::markdown-it-async::75ah7b83pcj1lh1tsil0y1::--><code>function trigger(target, key) {
+  const depsMap = targetMap.get(target)
+  if (!depsMap) return
+
+  const effects = depsMap.get(key)
+  if (effects) {
+    effects.forEach((effect) =&gt; {
+      if (effect !== activeEffect) {
+        effect()
+      }
+    })
+  }
+}</code></pre>
+</div><h2 id="数据结构图示" tabindex="-1">数据结构图示 <a class="header-anchor" href="#数据结构图示" aria-label="Permalink to “数据结构图示”">&#8203;</a></h2>
+<div class="language-"><button title="Copy Code" class="copy"></button><span class="lang"></span><pre><!--::markdown-it-async::33mo7jl3xubcsa11huhu48::--><code>targetMap (WeakMap)
+  ├── target1 (Map)
+  │     ├── key1: Set [effect1, effect2]
+  │     └── key2: Set [effect3]
+  └── target2 (Map)
+        └── key1: Set [effect4]</code></pre>
+</div><h2 id="ref-vs-reactive" tabindex="-1">ref vs reactive <a class="header-anchor" href="#ref-vs-reactive" aria-label="Permalink to “ref vs reactive”">&#8203;</a></h2>
+<table tabindex="0">
+<thead>
+<tr>
+<th>特性</th>
+<th>ref</th>
+<th>reactive</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>支持类型</td>
+<td>基本类型 + 对象</td>
+<td>仅对象</td>
+</tr>
+<tr>
+<td>访问值</td>
+<td>需要 <code>.value</code></td>
+<td>直接访问</td>
+</tr>
+<tr>
+<td>替换对象</td>
+<td>可直接赋值</td>
+<td>需要展开或 Object.assign</td>
+</tr>
+</tbody>
+</table>

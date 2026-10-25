@@ -1,0 +1,32 @@
+<h1 id="整机联调流程" tabindex="-1">整机联调流程 <a class="header-anchor" href="#整机联调流程" aria-label="Permalink to “整机联调流程”">&#8203;</a></h1>
+<p><strong>一句话定义：联调 = 把模块间的隐式假设显式化并逐条验证——bug 不在模块里，在模块之间的接缝里。</strong></p>
+<h2 id="内核-为什么单测全绿还会出鬼" tabindex="-1">内核：为什么单测全绿还会出鬼 <a class="header-anchor" href="#内核-为什么单测全绿还会出鬼" aria-label="Permalink to “内核：为什么单测全绿还会出鬼”">&#8203;</a></h2>
+<p>单元测试验证的是&quot;给定输入得到给定输出&quot;，但模块之间的协作依赖五类<strong>没有写进接口签名的假设</strong>：</p>
+<ol>
+<li><strong>时钟</strong>：双方认为的&quot;同时&quot;差几个毫秒（<a href="/notes/机器人/软件与中间件/time-sync-replay" class="term-link" title="时间戳在采集层打、全链路透传；录包把现场变成可重放数据">数据回放与时间同步</a>的语义问题）；</li>
+<li><strong>坐标系</strong>：这个点在基座系还是工具系？z 朝上还是朝前？（<a href="/notes/机器人/数学基础/transform-homogeneous" class="term-link" title="位姿=坐标系间关系；齐次矩阵统一旋转与平移，左右乘各有确定含义">坐标变换与齐次矩阵</a>的记号之争）；</li>
+<li><strong>单位</strong>：角度是度还是弧度？力矩是 Nm 还是 kgf·cm（舵机厂商口径不一）；</li>
+<li><strong>方向</strong>：正转是顺时针还是逆时针？推指令 +1 它往哪动？</li>
+<li><strong>时序</strong>：上电顺序、首帧数据前的行为、心跳丢失后的动作。</li>
+</ol>
+<p>单测过不了关的从来不是这五类——它们只在<strong>接缝</strong>处发作。联调的本质：<strong>把五类假设变成一张显式检查单，逐条在真实链路上验证</strong>。</p>
+<h2 id="规则与行为" tabindex="-1">规则与行为 <a class="header-anchor" href="#规则与行为" aria-label="Permalink to “规则与行为”">&#8203;</a></h2>
+<p><strong>先定流程，再写脚本</strong>（这条是工作方式而非技术）：联调脚本会把检查单里验证过的假设<strong>固化</strong>下来（固定的上电序列、固定的零位、固定的坐标系定义），脚本本身是检查单的可执行形态——检查单变了脚本重写，顺序不能反。</p>
+<p><strong>分阶段集成规则</strong>（每阶段只引入一个新变量）：</p>
+<ol>
+<li><strong>单模块自检</strong>：每个模块带着假数据源独立跑（假 IMU、假关节）；</li>
+<li><strong>链路集成</strong>：两两相连——传感器→融合、融合→规划、规划→执行，每条链路用已知输入验证输出（推一下机器人，看位姿估计方向对不对）；</li>
+<li><strong>整机空载</strong>：全链路跑标准动作序列，录包（<a href="/notes/机器人/软件与中间件/time-sync-replay" class="term-link" title="时间戳在采集层打、全链路透传；录包把现场变成可重放数据">数据回放与时间同步</a>）；</li>
+<li><strong>整机带载</strong>：真实负载 + 异常注入（挡一下、拔一个传感器、断一次电）。</li>
+</ol>
+<p><strong>联调检查单</strong>（最小集，每台新机器过一遍）：</p>
+<ul>
+<li>[ ] 全部模块时钟同源，时间戳打在采集层；</li>
+<li>[ ] TF 树画出打印稿，每个坐标系 z 朝哪写清楚；</li>
+<li>[ ] 单位约定表（角度/长度/力矩/电流）贴在仓库 README；</li>
+<li>[ ] 每个关节 +指令方向实测记录（正指令往哪转）；</li>
+<li>[ ] 上电/下电顺序表，急停链路单独演练；</li>
+<li>[ ] 传感器失效各拔一遍，整机进入预期安全态。</li>
+</ul>
+<h2 id="抽象-检查单即接口契约文档" tabindex="-1">抽象：检查单即接口契约文档 <a class="header-anchor" href="#抽象-检查单即接口契约文档" aria-label="Permalink to “抽象：检查单即接口契约文档”">&#8203;</a></h2>
+<p>抽象后，检查单不是&quot;经验备忘&quot;而是<strong>接口契约的文档化</strong>——它定义的正是签名表达不了的那部分接口（单位、方向、时序、语义）。工程化落点：检查单进版本库、机器状态（外参、零位、增益）做成<strong>机型配置文件</strong>随代码走；新机器联调 = 填配置 + 过检查单 + 跑标准脚本。联调从&quot;老师傅的手艺&quot;变成&quot;可重复的流程&quot;——这也是下一篇文章<a href="/notes/机器人/系统与仿真/testing" class="term-link" title="逐层固化随机性：单测/仿真/HIL/整机金字塔与指标体系">测试方法论</a>的地基。</p>

@@ -1,0 +1,22 @@
+<h1 id="卡尔曼滤波应用-ekf-传感器融合实战" tabindex="-1">卡尔曼滤波应用：EKF 传感器融合实战 <a class="header-anchor" href="#卡尔曼滤波应用-ekf-传感器融合实战" aria-label="Permalink to “卡尔曼滤波应用：EKF 传感器融合实战”">&#8203;</a></h1>
+<p><strong>一句话定义：EKF 融合 = 把多传感器的互补性写成&quot;状态 + 过程模型 + 观测模型&quot;三件套，让<a href="/notes/机器人/数学基础/kalman-filter" class="term-link" title="模型预测与观测按协方差加权的最优融合递推">卡尔曼滤波</a>的五公式按协方差自动分配信任。</strong></p>
+<h2 id="内核-从互补滤波到状态空间" tabindex="-1">内核：从互补滤波到状态空间 <a class="header-anchor" href="#内核-从互补滤波到状态空间" aria-label="Permalink to “内核：从互补滤波到状态空间”">&#8203;</a></h2>
+<p><a href="/notes/机器人/感知与估计/imu-attitude" class="term-link" title="陀螺走高频、加计走低频的频段分工融合">IMU 姿态解算</a>的互补滤波把信任比例写死在增益里；EKF 的升级在于<strong>让状态概念显式化</strong>：被估计的不只是姿态，还包括&quot;所有会漂的东西&quot;——陀螺零偏、编码器刻度、传感器间的时延。<strong>把误差源抬进状态向量，是融合系统与滤波玩具的分水岭</strong>：漂移从&quot;不可控的退化&quot;变成&quot;被持续观测和补偿的量&quot;。</p>
+<p>三件套怎么填（以 IMU + 编码器里程计融合位姿为例）：</p>
+<ol>
+<li><strong>状态向量</strong>：位置、速度、姿态（流形量，见下）、陀螺/加计零偏。</li>
+<li><strong>过程模型</strong>：IMU 读数驱动状态演化——IMU 从&quot;传感器&quot;变成&quot;过程输入&quot;，这正是 IMU 频率可以很高的原因。</li>
+<li><strong>观测模型</strong>：其他传感器（里程计、GPS、磁力计）作为低频观测修正漂移。</li>
+</ol>
+<h2 id="规则与行为" tabindex="-1">规则与行为 <a class="header-anchor" href="#规则与行为" aria-label="Permalink to “规则与行为”">&#8203;</a></h2>
+<p><strong>姿态是流形，正规做法是误差状态 EKF（ESKF）</strong>：名义状态用四元数积分，误差定义在切空间的三维小向量（<a href="/notes/机器人/数学基础/lie-groups" class="term-link" title="旋转流形与其切空间：指数映射连接，误差定义在切空间">李群李代数</a>的扰动模型），误差协方差在切空间传播，更新后把修正量注回名义状态再归一化。<strong>为什么不能直接对四元数做 EKF</strong>：四元数带单位约束，4 维高斯与约束流形不兼容；误差在切空间里永远是小量，线性化合法。</p>
+<p><strong>调参规则</strong>（理论依据见数学篇&quot;分配信任&quot;）：</p>
+<ol>
+<li>Q 矩阵来自器件数据手册的噪声密度 + 模型简化误差——<strong>先查手册再调参</strong>；</li>
+<li>R 来自静态数据统计（器件静止时的读数方差，顺手完成零偏初估）；</li>
+<li>融合结果震荡 → R 太小；跟踪迟滞 → R 太大或 Q 太小。</li>
+</ol>
+<p><strong>一致性检验</strong>（晦涩处，展开）：滤波器自报的协方差 P 与实际误差是否相符，可用 NIS（归新息平方）检验——新息 $z - H\hat{x}^-$ 的加权值应服从卡方分布。<strong>NIS 长期超标 = 滤波器在说谎</strong>（模型失配或 R/Q 错），此时估计值和 P 都不可信。这是判断&quot;融合结果能不能用于闭环控制&quot;的客观依据。</p>
+<p><strong>时间戳纪律</strong>：观测模型隐含&quot;读数对应哪个时刻的状态&quot;。传感器间时延差几毫秒，高速运动下就是厘米级误差——对齐时间戳（外推或时延入状态）在融合里不是工程细节而是正确性条件（见<a href="/notes/机器人/软件与中间件/time-sync-replay" class="term-link" title="时间戳在采集层打、全链路透传；录包把现场变成可重放数据">数据回放与时间同步</a>）。</p>
+<h2 id="抽象-eskf-是个可复用模板" tabindex="-1">抽象：ESKF 是个可复用模板 <a class="header-anchor" href="#抽象-eskf-是个可复用模板" aria-label="Permalink to “抽象：ESKF 是个可复用模板”">&#8203;</a></h2>
+<p>抽象后的融合开发只剩填空：<strong>状态向量 + 两个模型 + 初始 Q/R</strong>。IMU+轮速计、IMU+GPS、IMU+视觉里程计，模板同一。写代码时的落点：开源实现（robot_localization 的 ekf_localization_node、VINS 的 ESKF）都长这个骨架——读它们前先读本篇，你会看到的是熟悉的三件套而不是陌生的公式堆。</p>

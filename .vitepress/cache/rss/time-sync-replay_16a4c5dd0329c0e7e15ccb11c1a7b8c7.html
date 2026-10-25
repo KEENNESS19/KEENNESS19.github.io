@@ -1,0 +1,18 @@
+<h1 id="数据回放与时间同步" tabindex="-1">数据回放与时间同步 <a class="header-anchor" href="#数据回放与时间同步" aria-label="Permalink to “数据回放与时间同步”">&#8203;</a></h1>
+<p><strong>一句话定义：时间同步让多机的&quot;同时&quot;有定义；录包把现场变成可反复重放的数据——两者合起来，调试才能从&quot;守株待兔&quot;变成&quot;案头作业&quot;。</strong></p>
+<h2 id="内核-为什么时间戳是一等公民" tabindex="-1">内核：为什么时间戳是一等公民 <a class="header-anchor" href="#内核-为什么时间戳是一等公民" aria-label="Permalink to “内核：为什么时间戳是一等公民”">&#8203;</a></h2>
+<p>分布式系统里每台机器有自己的时钟，且<strong>都不可靠</strong>（晶振漂移、NTP 跳变）。而机器人算法时刻依赖两个问题：&quot;这两条数据是不是同时刻的？&quot;&quot;事件先后顺序是什么？&quot;——没有统一时间语义，因果全部失效。</p>
+<p>更深的一层：<strong>时间戳有语义之分</strong>。采集时刻（传感器曝光/采样瞬间）、接收时刻（驱动收到）、处理时刻（算法消费）三者之间隔着队列与传输延迟。<strong>多传感器融合的观测模型隐含&quot;读数对应某时刻的状态&quot;（<a href="/notes/机器人/感知与估计/kalman-fusion" class="term-link" title="EKF/ESKF 融合实战：状态向量 + 过程模型 + 观测模型三件套">卡尔曼滤波应用</a>的时间戳纪律），用接收时刻冒充采集时刻，高速运动下就是厘米级误差。</strong> 规则由此而来：时间戳必须在<strong>离物理事件最近的地方打</strong>（驱动层、硬件触发），之后全链路透传、只读不改。</p>
+<p>同步的两条路：<strong>硬件触发/PTP</strong>（同一晶振或 IEEE 1588 协议，亚毫秒级，LiDAR-相机融合的标配）与<strong>软件估计</strong>（记录收发对，估计偏移与漂移，毫秒级，够用但会跳）。</p>
+<h2 id="规则与行为" tabindex="-1">规则与行为 <a class="header-anchor" href="#规则与行为" aria-label="Permalink to “规则与行为”">&#8203;</a></h2>
+<p><strong>录包规范</strong>（录了将来要能用的包）：</p>
+<ol>
+<li><strong>全覆盖 + 带配置</strong>：所有输入话题 + TF + 参数快照 + QoS 快照一起录——少录一个话题，包就只能看不能重放；</li>
+<li><strong>录原始层</strong>：录传感器原始数据而非算法结果（结果可重算，原始数据不可再生）；</li>
+<li><strong>命名与索引</strong>：日期 + 场景 + 问题一句话；大包建索引；</li>
+<li><strong>重放要带时间</strong>：按原速/变速重放保持消息间隔，否则消费端的时间戳逻辑与真实不符。</li>
+</ol>
+<p><strong>回放纪律</strong>：重放时 <code>use_sim_time</code> 打开，让节点跟随包内时钟——否则&quot;现在&quot;与&quot;包里&quot;两套时间打架。</p>
+<h2 id="抽象-调试协议与数据资产" tabindex="-1">抽象：调试协议与数据资产 <a class="header-anchor" href="#抽象-调试协议与数据资产" aria-label="Permalink to “抽象：调试协议与数据资产”">&#8203;</a></h2>
+<p>抽象后的工作流是一套协议：<strong>现场异常 → 触发录包（或环形缓冲自动留最近 N 秒）→ 离线重放定位 → 最小化复现用例 → 修复后用同一包回归验证</strong>。环形缓冲（黑匣子）是关键升级：事故之后才想到录，永远来不及；常转的缓冲让&quot;最近 30 秒&quot;天然保存。</p>
+<p>这套流程把&quot;复现&quot;从运气变成工程能力——它与<a href="/notes/机器人/系统与仿真/integration" class="term-link" title="把模块间隐式假设（时钟/坐标系/单位/方向/时序）显式化验证">整机联调流程</a>的检查单、<a href="/notes/机器人/系统与仿真/testing" class="term-link" title="逐层固化随机性：单测/仿真/HIL/整机金字塔与指标体系">测试方法论</a>的回归测试共享同一批录包资产。<strong>录包是机器人的测试数据集，时间同步是它的可信度签名。</strong></p>

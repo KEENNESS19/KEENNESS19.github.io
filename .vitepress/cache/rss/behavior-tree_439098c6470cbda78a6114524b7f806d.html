@@ -1,0 +1,116 @@
+<h1 id="行为树原理-tick-模型与可组合的决策" tabindex="-1">行为树原理：Tick 模型与可组合的决策 <a class="header-anchor" href="#行为树原理-tick-模型与可组合的决策" aria-label="Permalink to “行为树原理：Tick 模型与可组合的决策”">&#8203;</a></h1>
+<blockquote>
+<p>与状态机篇同一推导方法。C++ 原理篇第 6 部分从实现角度（所有权、虚函数）拆过行为树，本篇是完整版：从&quot;FSM 差在哪&quot;出发，把行为树的每个设计决策还原成对那个缺陷的回应。</p>
+</blockquote>
+<hr>
+<h2 id="_1-起点-fsm-的组合性困境" tabindex="-1">1. 起点：FSM 的组合性困境 <a class="header-anchor" href="#_1-起点-fsm-的组合性困境" aria-label="Permalink to “1. 起点：FSM 的组合性困境”">&#8203;</a></h2>
+<p>状态机篇 4.1 论证过 FSM 的两个结构性缺陷：</p>
+<ol>
+<li><strong>状态爆炸</strong>：行为维度正交时状态数相乘；</li>
+<li><strong>边即逻辑</strong>：转移规则分散在每条边上，行为复用单位是&quot;状态对&quot;，无法整体搬移。</li>
+</ol>
+<p>根本原因在于 FSM 的组合单位是<strong>状态</strong>，而状态之间靠<strong>边</strong>连接——组合行为时边是手工布线的。机器人任务层需要的是另一种组合单位：<strong>把&quot;一坨行为&quot;当作一个整体，像积木一样嵌进更大的行为</strong>。行为树的所有设计都围绕这个需求展开：用<strong>树形包含</strong>替代<strong>图连线</strong>，让&quot;子行为&quot;天然是父行为的组成部分。</p>
+<h2 id="_2-节点分类-最小完备的四类积木" tabindex="-1">2. 节点分类：最小完备的四类积木 <a class="header-anchor" href="#_2-节点分类-最小完备的四类积木" aria-label="Permalink to “2. 节点分类：最小完备的四类积木”">&#8203;</a></h2>
+<p>行为树的节点可以收敛为四类，每类回答一个问题：</p>
+<table tabindex="0">
+<thead>
+<tr>
+<th>类别</th>
+<th>代表节点</th>
+<th>回答的问题</th>
+<th>返回值逻辑</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>组合节点</td>
+<td>Sequence、Selector、Parallel</td>
+<td><strong>子行为怎么编排</strong></td>
+<td>Sequence：全成功才成功（逻辑 AND）；Selector：一成功即成功（逻辑 OR）；Parallel：同时 tick 按 policy 汇总</td>
+</tr>
+<tr>
+<td>装饰节点</td>
+<td>Retry、Timeout、Inverter、ForceSuccess</td>
+<td><strong>怎么修饰一个子树</strong></td>
+<td>包装单个子节点，变换其返回值或生命周期</td>
+</tr>
+<tr>
+<td>执行节点</td>
+<td>Action、Condition</td>
+<td><strong>真正做事</strong></td>
+<td>Action 执行副作用；Condition 只读判定（无副作用）</td>
+</tr>
+<tr>
+<td>数据节点</td>
+<td>黑板读写（常融合在端口里）</td>
+<td><strong>数据从哪来到哪去</strong></td>
+<td>读写黑板键</td>
+</tr>
+</tbody>
+</table>
+<p><strong>为什么恰好这四类？</strong> 因为它们对应控制流的四个正交关注点：<strong>编排（结构）、修饰（横切）、执行（叶子）、通信（数据）</strong>。任何行为树系统无论 API 长什么样，缺了哪类都会在实践里被迫用别扭方式补——例如缺装饰节点时，重试逻辑只能写死在每个 Action 里，无法复用。</p>
+<p><strong>为什么叶子节点要区分 Action 和 Condition？</strong> 因为两者的失败语义不同：Condition 返回 Failure 是<strong>正常信息</strong>（条件不成立，Selector 换下一个分支），Action 返回 Failure 是<strong>异常事件</strong>（任务没做成，需要重试/恢复）。区分它们让&quot;逻辑 OR 换分支&quot;和&quot;失败恢复&quot;两种语义不会混在一起。</p>
+<h2 id="_3-tick-三态模型-为什么是-running" tabindex="-1">3. Tick 三态模型：为什么是 Running <a class="header-anchor" href="#_3-tick-三态模型-为什么是-running" aria-label="Permalink to “3. Tick 三态模型：为什么是 Running”">&#8203;</a></h2>
+<p>执行模型：<strong>每帧从根 tick 一次</strong>，节点返回 <code>Success / Failure / Running</code> 三态之一（见 C++ 原理 6.2 的帧驱动论证：确定性与可中断性）。这里补 Running 的推导：</p>
+<ul>
+<li>长时任务（移动 3 秒、抓取 1 秒）如果同步阻塞 tick，整棵树就死了——其他分支（安全监控）无法运行；</li>
+<li>如果异步化（任务完成发事件），树失去&quot;每帧重新评估&quot;的能力，退化回事件驱动 FSM 的时序问题；</li>
+<li><strong>Running 是第三条路</strong>：任务声明&quot;未完成，下帧继续问我&quot;，控制权每帧都交还树根。</li>
+</ul>
+<p>三态的关键推论：<strong>树是&quot;每帧从头执行的查询&quot;，不是&quot;一次执行的流程&quot;</strong>。这个心智模型解释了行为树的大多数怪癖——为什么反应式节点要重评估、为什么副作用要小心、为什么异步节点必须实现 halt。</p>
+<h2 id="_4-反应式-vs-记忆式-重评估的两难" tabindex="-1">4. 反应式 vs 记忆式：重评估的两难 <a class="header-anchor" href="#_4-反应式-vs-记忆式-重评估的两难" aria-label="Permalink to “4. 反应式 vs 记忆式：重评估的两难”">&#8203;</a></h2>
+<p>组合节点带 Running 子节点时的核心抉择（C++ 原理 6.4 论证过，此处给出完整的取舍表）：</p>
+<table tabindex="0">
+<thead>
+<tr>
+<th>方案</th>
+<th>机制</th>
+<th>优点</th>
+<th>缺点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>记忆式（Sequence）</td>
+<td>游标记位，下帧从断点继续</td>
+<td>CPU 省；副作用（如&quot;抓取&quot;的进入动作）不重复</td>
+<td>前序条件陈旧——&quot;敌人不在&quot;早变假了没人再查</td>
+</tr>
+<tr>
+<td>反应式（ReactiveSequence）</td>
+<td>每帧从第一个重评估</td>
+<td>响应性最好；条件翻转立即打断</td>
+<td>每帧全量重算；前序节点副作用每帧重放</td>
+</tr>
+</tbody>
+</table>
+<p><strong>为什么库同时提供两种而不是选一种？</strong> 因为两者的失效模式恰好互补，正确选择取决于子树的语义：<strong>纯条件的子树用反应式（重评估是目的），有副作用的子树用记忆式（重放是 bug）</strong>。这是一个&quot;机制二选一、语义由用户判断&quot;的典型设计。BT.CPP 的经验法则是：默认 ReactiveSequence，出现&quot;动作被执行两次&quot;才换记忆式。</p>
+<p>推论（C++ 原理 6.6）：<strong>Running 的组合节点必须带记忆（执行游标），但记忆的范围仅限控制流；数据一律走黑板</strong>。控制流有状态、数据流无状态，是行为树正确性的第一纪律。</p>
+<h2 id="_5-黑板-树外数据总线" tabindex="-1">5. 黑板：树外数据总线 <a class="header-anchor" href="#_5-黑板-树外数据总线" aria-label="Permalink to “5. 黑板：树外数据总线”">&#8203;</a></h2>
+<p>节点之间为什么不能直接互相调用、共享成员？因为<strong>树形包含结构里，兄弟节点唯一的公共祖先是根</strong>——任何直接引用都会在子树搬移时断掉（组合性的反面）。黑板（C++ 原理 6.3）用&quot;节点只认键不认对象&quot;解决：兄弟节点通过黑板键交换数据，子树整体搬移后键依赖依然成立。</p>
+<p>黑板相对全局变量的三个强化：作用域绑定树实例（每机器人一份，天然隔离）、键带类型、读写依赖可通过端口声明显式化（工具链能画出数据流图）。<strong>黑板是行为树版的依赖注入容器</strong>：解耦来自&quot;依赖通过外部名字解析&quot;而不是&quot;对象直接持有&quot;。</p>
+<h2 id="_6-恢复与回退-selector-的工程化" tabindex="-1">6. 恢复与回退：Selector 的工程化 <a class="header-anchor" href="#_6-恢复与回退-selector-的工程化" aria-label="Permalink to “6. 恢复与回退：Selector 的工程化”">&#8203;</a></h2>
+<p>朴素 Selector（从左到右尝试，成功即停）在实践中要加两个机制才可用：</p>
+<ul>
+<li><strong>优先级即恢复序</strong>：把&quot;恢复行为&quot;（脱困、重试）放左边，&quot;正常行为&quot;放右边——异常时 Selector 自然先试便宜的恢复手段，逐级升级到昂贵的方案。这是行为树里&quot;故障恢复&quot;的标准表达，<strong>不需要写任何恢复状态机</strong>；</li>
+<li><strong>带条件的回退</strong>：<code>RetryUntilSuccessful(n)</code> 装饰器 + 指数退避参数，把&quot;重试几次、间隔多久&quot;从业务代码里抽出来成为可配置横切面。</li>
+</ul>
+<p>这套机制对应机器人任务的&quot;teleop → 重定位 → 重试抓取 → 报警&quot;升级链，在 BT 里是三行 XML，在 FSM 里是一张需要维护的转移子图——这就是组合性差异的直观体现。</p>
+<h2 id="_7-工程实现要点-c" tabindex="-1">7. 工程实现要点（C++） <a class="header-anchor" href="#_7-工程实现要点-c" aria-label="Permalink to “7. 工程实现要点（C++）”">&#8203;</a></h2>
+<p>C++ 原理 6.5 论证过所有权设计（<code>unique_ptr</code> + 虚函数 + 递归析构），本篇补运行时清单：</p>
+<ul>
+<li><strong>接口</strong>：<code>Status tick(Blackboard&amp;)</code> + <code>virtual void halt()</code>。halt 是<strong>可中断契约</strong>（C++ 原理 6.8）：任何 Running 节点都可能在下一帧被反应式打断，必须能安全中止（取消导航目标、释放夹爪力控）——漏实现 halt 的异步节点是行为树 bug 的头号来源；</li>
+<li><strong>树构建</strong>：XML/工厂注册（结构即数据，可与 Groot 等工具共享，策划改树不重编 C++）或 C++ 内联构建（编译期检查，重构友好）。生产环境通常两者并存：开发用内联，部署用 XML；</li>
+<li><strong>调试</strong>：tick 级日志（每帧每节点的返回值 + 耗时）、黑板快照、树状态可视化——行为是时序过程，可视化是唯一把时序投影回静态结构的手段（C++ 原理 6.7）；</li>
+<li><strong>性能</strong>：树的遍历是 O(节点数) 的虚调用，百节点规模在控制频率下可忽略；热路径优化方向是减少 Condition 的重复计算（条件结果缓存一帧）而不是优化遍历本身。</li>
+</ul>
+<h2 id="_8-与-fsm-的混合-bt-包裹-hsm" tabindex="-1">8. 与 FSM 的混合：BT 包裹 HSM <a class="header-anchor" href="#_8-与-fsm-的混合-bt-包裹-hsm" aria-label="Permalink to “8. 与 FSM 的混合：BT 包裹 HSM”">&#8203;</a></h2>
+<p>行为树不擅长表达&quot;真互斥的物理模式&quot;（状态机篇 7），成熟架构是<strong>混合</strong>：</p>
+<ul>
+<li>顶层 FSM/HSM：充电 / 运行 / 故障等硬模式，互斥是硬件事实；</li>
+<li>每个模式内部一棵行为树：该模式下的任务编排与恢复；</li>
+<li>BT 叶子再委托运动基元（DMP 篇）：生成具体轨迹。</li>
+</ul>
+<p>分层依据是<strong>变更频率与正确性来源</strong>：模式层状态少、边是安全契约、几乎不变（FSM 的强项）；行为层频繁调整、需要组合与打断（BT 的强项）；运动层需要数学保证（DMP 的强项）。<strong>每层用它失效代价最低的模型</strong>。</p>
+<h2 id="_9-结语" tabindex="-1">9. 结语 <a class="header-anchor" href="#_9-结语" aria-label="Permalink to “9. 结语”">&#8203;</a></h2>
+<p>行为树的推导链：<strong>FSM 组合性困境 → 组合单位从&quot;状态对&quot;改为&quot;子树&quot; → 树形包含 → 编排/修饰/执行/数据四类节点 → 帧驱动 Tick 保住可中断性 → Running 引出记忆式/反应式两难 → 用语义区分（条件反应式、动作记忆式）收尾</strong>。它的每一个&quot;奇怪&quot;设计（每帧重评估、halt 契约、黑板键）都是&quot;树是每帧重新执行的查询&quot;这一心智模型的必然推论。理解了这个模型，行为树不是需要背的 23 种节点，而是四类积木加上三条纪律：<strong>控制流有记忆、数据流走黑板、副作用可中断</strong>。</p>

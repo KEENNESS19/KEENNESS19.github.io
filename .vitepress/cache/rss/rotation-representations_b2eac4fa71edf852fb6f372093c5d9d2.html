@@ -1,0 +1,57 @@
+<h1 id="旋转表示全家" tabindex="-1">旋转表示全家 <a class="header-anchor" href="#旋转表示全家" aria-label="Permalink to “旋转表示全家”">&#8203;</a></h1>
+<p><strong>一句话定义：旋转表示 = 在弯曲空间 SO(3) 上选一种&quot;写坐标&quot;的方法。</strong></p>
+<h2 id="内核-为什么需要多种表示" tabindex="-1">内核：为什么需要多种表示 <a class="header-anchor" href="#内核-为什么需要多种表示" aria-label="Permalink to “内核：为什么需要多种表示”">&#8203;</a></h2>
+<p>先接受一个事实（<a href="/notes/机器人/数学基础/quaternion" class="term-link" title="三维旋转的四参数表示：S³ 双重覆盖 SO(3)，无奇异">四元数</a>篇证明过）：三维旋转构成的空间 SO(3) 是<strong>三维但弯曲</strong>的，任何三参数坐标必有奇异点。而工程任务的诉求互相冲突——人要可读（三个角）、积分要无奇异（四元数）、批量变换点要快（矩阵）、求误差要能加减（李代数）。<strong>没有一种表示全赢，所以四种并存；它们不是四个知识，而是同一对象的四张脸。</strong></p>
+<p>统一视角一句话：</p>
+<ul>
+<li><strong>欧拉角 / 轴角</strong>：SO(3) 的三维坐标卡（必然带奇异）；</li>
+<li><strong>旋转矩阵</strong>：SO(3) 本身（无奇异但 9 参数冗余）；</li>
+<li><strong>四元数</strong>：S³ 的坐标（4 参数，双重覆盖消奇异）；</li>
+<li><strong>李代数 so(3)</strong>：单位元切空间的三维向量（局部线性，见<a href="/notes/机器人/数学基础/lie-groups" class="term-link" title="旋转流形与其切空间：指数映射连接，误差定义在切空间">李群李代数</a>）。</li>
+</ul>
+<h2 id="规则与行为" tabindex="-1">规则与行为 <a class="header-anchor" href="#规则与行为" aria-label="Permalink to “规则与行为”">&#8203;</a></h2>
+<p>从&quot;每种表示的失效面&quot;直接推出使用规则：</p>
+<table tabindex="0">
+<thead>
+<tr>
+<th>表示</th>
+<th>优势</th>
+<th>失效面</th>
+<th>使用规则</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>欧拉角</td>
+<td>人可读</td>
+<td>万向节死锁、插值路径错误</td>
+<td>只在<strong>人机界面</strong>出现（手柄、调试打印）</td>
+</tr>
+<tr>
+<td>轴角</td>
+<td>直观、参数即物理量</td>
+<td>0°/180° 轴不确定</td>
+<td>用于表示<strong>单次旋转</strong>（误差旋转向量）</td>
+</tr>
+<tr>
+<td>旋转矩阵</td>
+<td>无奇异、作用向量最快</td>
+<td>9 参数、漂移需再正交化、插值无定义</td>
+<td><strong>批量变换点云</strong>、作为最终计算形态</td>
+</tr>
+<tr>
+<td>四元数</td>
+<td>无奇异、插值好、积分稳</td>
+<td>直观性差、双重覆盖（q 与 −q 同一旋转）</td>
+<td><strong>存储、插值、积分</strong>的默认形态</td>
+</tr>
+</tbody>
+</table>
+<p>三条高频操作的选择规则：</p>
+<ol>
+<li><strong>存储与传输</strong> → 四元数（4 个数 + 可积可插）；</li>
+<li><strong>变换一堆点</strong> → 先把四元数转成矩阵，再批量乘（一次转换换 N 次省乘法）；</li>
+<li><strong>求两次姿态的差</strong> → 相对旋转的四元数再转轴角（误差是小旋转向量，可加权、可滤波）。</li>
+</ol>
+<h2 id="抽象-转换函数就是坐标卡之间的映射" tabindex="-1">抽象：转换函数就是坐标卡之间的映射 <a class="header-anchor" href="#抽象-转换函数就是坐标卡之间的映射" aria-label="Permalink to “抽象：转换函数就是坐标卡之间的映射”">&#8203;</a></h2>
+<p>理解了&quot;同一对象的四张脸&quot;，就不必背十几个转换公式——<strong>所有转换都在描述&quot;换一张坐标图&quot;</strong>，Eigen / tf2 的 <code>toRotationMatrix()</code>、<code>fromAxisAngle()</code> 就是这些映射的实现。工程上只剩一条纪律：<strong>每处代码声明自己用哪张脸，边界处显式转换</strong>（<a href="/notes/机器人/数学基础/quaternion" class="term-link" title="三维旋转的四参数表示：S³ 双重覆盖 SO(3)，无奇异">四元数</a>篇第 6 节的约定）。后续所有文章（姿态解算、标定、运动学）都默认这条纪律。</p>

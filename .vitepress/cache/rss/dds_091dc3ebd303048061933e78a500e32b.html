@@ -1,0 +1,119 @@
+<h1 id="dds-原理-以数据为中心的分布式通信" tabindex="-1">DDS 原理：以数据为中心的分布式通信 <a class="header-anchor" href="#dds-原理-以数据为中心的分布式通信" aria-label="Permalink to “DDS 原理：以数据为中心的分布式通信”">&#8203;</a></h1>
+<blockquote>
+<p>前几篇都在单机内部：状态机/行为树是进程内决策，DMP 是控制回路。一旦系统跨进程、跨机器（感知机 + 规划机 + 多个执行机），通信层就成为架构的地基。DDS（Data Distribution Service, OMG 标准）是这一层的工业级答案，也是 ROS 2 的底层。本篇从需求倒推它的每个设计。</p>
+</blockquote>
+<hr>
+<h2 id="_1-需求-机器人通信难在哪" tabindex="-1">1. 需求：机器人通信难在哪 <a class="header-anchor" href="#_1-需求-机器人通信难在哪" aria-label="Permalink to “1. 需求：机器人通信难在哪”">&#8203;</a></h2>
+<p>把场景具体化，需求清单是：</p>
+<ol>
+<li><strong>多对多的实时数据流</strong>：几十个节点互相订阅对方的传感器/状态流，频率 10–1000 Hz，延迟预算毫秒级；</li>
+<li><strong>网络不可靠</strong>：WiFi 掉包、带宽抖动、分区，系统不能因此停摆；</li>
+<li><strong>不同数据不同正确性要求</strong>：IMU 流丢一帧无所谓（下一帧马上来），指令流丢一条不可接受——<strong>&quot;可靠性&quot;不是全局开关，是按数据流配置的</strong>；</li>
+<li><strong>节点动态加入退出</strong>：热插拔设备、动态启停节点，不能重启系统；</li>
+<li><strong>无单点</strong>： naval/defense 起源（DDS 前身是美国海军舰艇系统），中心服务器在战场上就是靶子。</li>
+</ol>
+<h2 id="_2-候选方案与-dds-的选位" tabindex="-1">2. 候选方案与 DDS 的选位 <a class="header-anchor" href="#_2-候选方案与-dds-的选位" aria-label="Permalink to “2. 候选方案与 DDS 的选位”">&#8203;</a></h2>
+<table tabindex="0">
+<thead>
+<tr>
+<th>方案</th>
+<th>模型</th>
+<th>差在哪</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ROS 1</td>
+<td>Master 中心化 + TCP</td>
+<td>单点故障（master 挂全瘫）、XML-RPC 发现慢、TCP 队头阻塞、QoS 缺失——需求 4/5/3 全不满足</td>
+</tr>
+<tr>
+<td>MQTT</td>
+<td>Broker 中转</td>
+<td>Broker 是瓶颈与单点；语义是&quot;消息&quot;而非&quot;数据状态&quot;；不适合高频大数据流</td>
+</tr>
+<tr>
+<td>Kafka</td>
+<td>分布式日志</td>
+<td>吞吐强但秒级到百毫秒级延迟，存储型而非实时型；本质是数据管道不是控制总线</td>
+</tr>
+<tr>
+<td>ZeroMQ</td>
+<td>消息套接字库</td>
+<td>极快，但只提供传输原语——发现、类型、QoS、可靠性全部自己造（需求 3/4 无着落）</td>
+</tr>
+</tbody>
+</table>
+<p>DDS 的定位由此清晰：<strong>不提供中间商（无 broker），把&quot;发现、类型、QoS、可靠性&quot;做成协议的一部分，让每个数据流按需配置通信行为</strong>。它是唯一一个把&quot;需求 3 的按流配置&quot;作为一等公民的方案。</p>
+<h2 id="_3-核心模型-全局数据空间" tabindex="-1">3. 核心模型：全局数据空间 <a class="header-anchor" href="#_3-核心模型-全局数据空间" aria-label="Permalink to “3. 核心模型：全局数据空间”">&#8203;</a></h2>
+<h3 id="_3-1-dcps-为什么是-以数据为中心" tabindex="-1">3.1 DCPS：为什么是&quot;以数据为中心&quot; <a class="header-anchor" href="#_3-1-dcps-为什么是-以数据为中心" aria-label="Permalink to “3.1 DCPS：为什么是&quot;以数据为中心&quot;”">&#8203;</a></h3>
+<p>DDS 的抽象（DCPS 模型）不是消息传递，而是<strong>共享数据空间</strong>：所有节点把各自的数据写进一个逻辑上&quot;全局可见&quot;的数据空间（按 Topic 组织），读者按需订阅。写者和读者<strong>彼此不知道对方存在</strong>——通信被解耦成&quot;写状态&quot;和&quot;读状态&quot;，而不是&quot;发消息&quot;。</p>
+<p><strong>为什么这个抽象重要？</strong> 它改变了正确性的定义：读者关心的不是&quot;收到过哪些消息&quot;，而是&quot;<strong>当前最新状态是什么</strong>&quot;（传感器的当前读数、机器人的当前位姿）。消息队列模型里&quot;最新状态&quot;需要读者自己维护（丢包、乱序、重放都要自己处理）；数据中心的模型里这是中间件的职责——配合 QoS（4.1）声明&quot;我要最新的还是要全部&quot;。</p>
+<h3 id="_3-2-类型与-idl" tabindex="-1">3.2 类型与 IDL <a class="header-anchor" href="#_3-2-类型与-idl" aria-label="Permalink to “3.2 类型与 IDL”">&#8203;</a></h3>
+<p>Topic 携带强类型数据，类型用 IDL 定义，代码生成序列化（CDR 编码）。<strong>为什么类型进协议而不是约定 JSON？</strong> 因为机器人数据高频大流量：CDR 二进制零文本解析开销，且类型校验在发现阶段就完成（类型不匹配直接发现不了，而不是运行时解析出错）。代价是改类型要重新生成代码——DDS 用开发期的仪式换运行期的确定。</p>
+<h2 id="_4-qos-dds-的真正创新" tabindex="-1">4. QoS：DDS 的真正创新 <a class="header-anchor" href="#_4-qos-dds-的真正创新" aria-label="Permalink to “4. QoS：DDS 的真正创新”">&#8203;</a></h2>
+<h3 id="_4-1-为什么-qos-是核心而不是附件" tabindex="-1">4.1 为什么 QoS 是核心而不是附件 <a class="header-anchor" href="#_4-1-为什么-qos-是核心而不是附件" aria-label="Permalink to “4.1 为什么 QoS 是核心而不是附件”">&#8203;</a></h3>
+<p>大多数库把&quot;可靠性/历史深度&quot;当参数，DDS 把它们上升为<strong>契约语言</strong>：写者与读者各自声明 QoS，中间件按<strong>兼容规则</strong>匹配（如 reliable 读者 + best-effort 写者不兼容，发现直接失败——<strong>错误在接线时暴露，而不是运行时丢数据</strong>）。</p>
+<p>核心策略与它们的正确用法：</p>
+<table tabindex="0">
+<thead>
+<tr>
+<th>QoS</th>
+<th>语义</th>
+<th>典型配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Reliability</td>
+<td>best-effort / reliable</td>
+<td>传感器流 best-effort；指令/配置 reliable</td>
+</tr>
+<tr>
+<td>History</td>
+<td>KEEP_LAST(depth) / KEEP_ALL</td>
+<td>状态流 depth=1（只要最新）；日志 KEEP_ALL</td>
+</tr>
+<tr>
+<td>Durability</td>
+<td>VOLATILE / TRANSIENT_LOCAL</td>
+<td>后加入者能否拿到历史——参数服务器语义就用 TRANSIENT_LOCAL</td>
+</tr>
+<tr>
+<td>Deadline</td>
+<td>数据必须在周期内更新</td>
+<td>心跳契约：超时即异常，可触发故障处理</td>
+</tr>
+<tr>
+<td>Liveliness</td>
+<td>写者存活证明</td>
+<td>掉线检测，配合 Deadline 构成超时体系</td>
+</tr>
+<tr>
+<td>Lifespan</td>
+<td>数据有效期</td>
+<td>旧指令过期作废（防&quot;延迟到达的旧命令&quot;）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>为什么值得背这张表？</strong> 因为机器人通信的大多数事故是&quot;QoS 配错了语义&quot;：传感器流配了 reliable → WiFi 掉包时可靠重传堆积造成延迟雪崩（该 best-effort）；指令流配了 best-effort → 停车指令丢失（该 reliable + KEEP_LAST(1)）。<strong>QoS 表就是通信正确性的检查清单</strong>。</p>
+<h3 id="_4-2-发现-没有-broker-怎么找到彼此" tabindex="-1">4.2 发现：没有 broker 怎么找到彼此 <a class="header-anchor" href="#_4-2-发现-没有-broker-怎么找到彼此" aria-label="Permalink to “4.2 发现：没有 broker 怎么找到彼此”">&#8203;</a></h3>
+<p>无中心方案是 <strong>RTPS 发现协议</strong>：节点启动后向组播地址宣告自己（SPDP），互相同意后单播交换详细元数据（SEDP）。<strong>为什么不用中心注册表？</strong> 单点问题（需求 5）+ 启动顺序问题（先启动的节点不知道后启动的，反之亦然——组播让&quot;迟到者主动广播&quot;天然解决双向发现）。</p>
+<p>代价：组播在 WiFi 上昂贵（组播包以最低速率发送），大系统会产生<strong>发现风暴</strong>（几百节点 × 几百 topic 的元数据交换）。工程对策：限制参与发现的 topic 数、配置 discovery traffic 预算、静态 peer 列表跳过组播、大型部署切子网。</p>
+<h2 id="_5-dds-与-ros-2-的关系" tabindex="-1">5. DDS 与 ROS 2 的关系 <a class="header-anchor" href="#_5-dds-与-ros-2-的关系" aria-label="Permalink to “5. DDS 与 ROS 2 的关系”">&#8203;</a></h2>
+<p>ROS 2 没有自研通信，而是把 DDS 包进抽象层 <strong>rmw</strong>（可实现为 Fast DDS、CycloneDDS 等）。为什么这么选？</p>
+<ul>
+<li>ROS 1 的教训（2 表第一行）：通信语义不够用，自研追不上，不如站在成熟标准上；</li>
+<li>rmw 抽象层让 DDS 实现可替换——标准的好处正是<strong>多供应商竞争</strong>；</li>
+<li>ROS 2 的 QoS 参数直接透传 DDS QoS（<code>qos_overrides</code>），4.1 的表格在 ROS 2 里原样适用。</li>
+</ul>
+<p>理解 DDS 后 ROS 2 的很多现象豁然开朗：<code>ros2 daemon</code> 是发现缓存、大消息卡顿是默认 UDP 分片（该开 shared memory / zero-copy）、WiFi 上发现慢是组播问题——<strong>ROS 2 的坑清单基本都是 DDS 特性清单的投影</strong>。</p>
+<h2 id="_6-实践调优清单" tabindex="-1">6. 实践调优清单 <a class="header-anchor" href="#_6-实践调优清单" aria-label="Permalink to “6. 实践调优清单”">&#8203;</a></h2>
+<ul>
+<li><strong>大流量</strong>：启用 Fast DDS 的 SHM（共享内存传输，同机零拷贝）；跨机用 CDR + 数据聚合（别给每个标量开一个 topic）；UDP 大包调分片缓冲；</li>
+<li><strong>WiFi 场景</strong>：关组播发现（静态 peer）、传感器 QoS 一律 best-effort、深history 会放大掉包时的延迟尖峰；</li>
+<li><strong>实时性</strong>：listener 线程绑定核 + 优先级、避免 discovery 阶段的 CPU 抖动进入控制循环、CycloneDDS 在延迟抖动上通常优于 Fast DDS（以基准测试为准）；</li>
+<li><strong>调试</strong>：<code>ros2 topic info -v</code> 看 QoS 匹配结果；发现失败先查类型一致性和 QoS 兼容性——<strong>&quot;看不见对方&quot;的根因 90% 在发现阶段，不在数据阶段</strong>。</li>
+</ul>
+<h2 id="_7-结语" tabindex="-1">7. 结语 <a class="header-anchor" href="#_7-结语" aria-label="Permalink to “7. 结语”">&#8203;</a></h2>
+<p>DDS 的推导链：<strong>需求（多对多实时、按流可靠性、动态加入、无单点）→ ROS 1/MQTT/Kafka/ZMQ 各缺一角 → 抽象换成&quot;全局数据空间&quot;（读最新状态而非收消息）→ 无中心发现（RTPS 组播）→ QoS 上升为契约（不匹配即发现失败）→ 类型进协议（CDR + 发现期校验）</strong>。它的每个组件都是需求清单里某一条的直接回应；而 ROS 2 采 DDS 的决定，本质是承认&quot;机器人通信的正确性需求复杂到必须标准化&quot;——理解了这条链，QoS 表不再是配置项清单，而是需求清单的镜像。</p>

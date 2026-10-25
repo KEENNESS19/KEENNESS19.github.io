@@ -1,0 +1,20 @@
+<h1 id="imu-姿态解算" tabindex="-1">IMU 姿态解算 <a class="header-anchor" href="#imu-姿态解算" aria-label="Permalink to “IMU 姿态解算”">&#8203;</a></h1>
+<p><strong>一句话定义：姿态解算 = 让&quot;短期可信&quot;的陀螺积分与&quot;长期可信&quot;的重力/磁场观测互为校准，得到既平滑又不漂的姿态。</strong></p>
+<h2 id="内核-为什么单个传感器都不行" tabindex="-1">内核：为什么单个传感器都不行 <a class="header-anchor" href="#内核-为什么单个传感器都不行" aria-label="Permalink to “内核：为什么单个传感器都不行”">&#8203;</a></h2>
+<p>IMU 两颗核心器件的误差性质恰好<strong>互补</strong>（器件层误差模型见硬件篇的 IMU 小节）：</p>
+<ul>
+<li><strong>陀螺仪</strong>：输出角速度。积分得姿态——高频响应好、平滑；但零偏被积分放大，姿态<strong>随时间漂移</strong>（每秒零点几度，一小时后不可用）。</li>
+<li><strong>加速度计</strong>：静止时测到重力方向 → 提供&quot;水平姿态&quot;（roll/pitch）的绝对参考——不漂；但任何运动加速度都会混入读数，<strong>瞬时噪声大</strong>。且它无法观测绕重力轴的偏航（yaw）——重力对 yaw 无向性，必须加磁力计补（磁力计又受电机磁场干扰，这是 yaw 永远最弱的原因）。</li>
+</ul>
+<p><strong>互补的直觉</strong>：陀螺走高频、加计走低频——高通滤波陀螺 + 低通滤波加计，再相加。这一个频段分工就是所有姿态融合算法的共同内核。</p>
+<h2 id="规则与行为" tabindex="-1">规则与行为 <a class="header-anchor" href="#规则与行为" aria-label="Permalink to “规则与行为”">&#8203;</a></h2>
+<p><strong>Mahony/Madgwick 滤波</strong>（工程标配）的实现只有三步，本质是一个 PI 反馈：</p>
+<ol>
+<li>用当前姿态估计预测&quot;重力应该指向哪&quot;；</li>
+<li>与加计实测的重力方向做叉积 → 得到姿态误差（一个旋转校正向量）；</li>
+<li>误差经 PI 增益（P 消瞬时误差，I 顺便估计陀螺零偏）注入陀螺角速度，积分更新姿态。</li>
+</ol>
+<p>用<a href="/notes/机器人/数学基础/quaternion" class="term-link" title="三维旋转的四参数表示：S³ 双重覆盖 SO(3)，无奇异">四元数</a>做姿态载体（避免奇异、插值方便、微分方程有 ½ 因子），十几行代码即可跑通。<strong>调参规则</strong>：P 大 = 姿态跟重力紧（抖）、P 小 = 跟陀螺紧（漂）；I 的积分值就是在线估计的陀螺零偏——<strong>I 通道的价值不只是消稳态误差，而是把器件误差模型里的零偏项活学活用</strong>。</p>
+<p><strong>它与卡尔曼滤波的关系</strong>：互补滤波 = 把&quot;高频信陀螺、低信加计&quot;写死在增益里的简化版；KF 版（见下一应用篇）则让增益由协方差动态计算，并顺带估计零偏等状态。两步走的学习路径：先手写 Mahony 理解分工，再上 EKF 理解形式化。</p>
+<h2 id="抽象-ahrs-模块" tabindex="-1">抽象：AHRS 模块 <a class="header-anchor" href="#抽象-ahrs-模块" aria-label="Permalink to “抽象：AHRS 模块”">&#8203;</a></h2>
+<p>抽象后的姿态解算是一个标准模块：<strong>输入 IMU 原始数据（带时间戳），输出姿态四元数（带频率与置信度）</strong>——即 AHRS（航姿参考系统）。ROS 生态里 <code>imu_filter_madgwick</code> / <code>complementary_filter</code> 都是现成实现。理解了内核，你可以在三个层次复用：直接用模块、改增益适配器件、或升级成 ESKF（<a href="/notes/机器人/数学基础/lie-groups" class="term-link" title="旋转流形与其切空间：指数映射连接，误差定义在切空间">李群李代数</a>的扰动模型 + <a href="/notes/机器人/数学基础/kalman-filter" class="term-link" title="模型预测与观测按协方差加权的最优融合递推">卡尔曼滤波</a>的五公式）。yaw 的短板是模块边界——需要绝对 yaw 时，解法只有磁力计融合或外部定位，没有第四条路。</p>
