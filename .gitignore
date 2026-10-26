@@ -1,5 +1,12 @@
+# 依赖（由 npm install / npm ci 生成，不入库）
 node_modules/
-docs/.vitepress/dist/
+
+# VitePress 构建产物与缓存（本地构建、CI 构建都会重新生成，不入库）
+.vitepress/cache/
+.vitepress/dist/
 docs/.vitepress/cache/
+docs/.vitepress/dist/
+
+# 系统与日志
 .DS_Store
 *.log
